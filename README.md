@@ -38,15 +38,20 @@ To run inference on a test dataset, use the following command:
 
 ```bash
 python test.py \
-  --ckpt ../Training/runs/best_ccmim_model.pth \
-  --dataset RDD2022 \
-  --test_data_dir ../Testing/test_datasets/RDD2022_test \
-  --outdir ../Quantitative_Results/result_tables \
-  --batch_size 32 \
-  --size 640 \
-  --conf_thres 0.5 \
-  --iou_thres 0.5 \
-  --seed 123
+--config_dir ./configs \
+--checkpoint_dir ./checkpoints/geocraft_train \
+--dataset gso \
+--save_results \
+--visualize \
+--eval_metrics CMMD FID_CLIP CLIP-score LPIPS
+
+python test.py \
+--config_dir ./configs \
+--checkpoint_dir ./checkpoints/geocraft_train \
+--dataset pix3d \
+--save_results \
+--visualize \
+--eval_metrics CMMD FID_CLIP CLIP-score LPIPS
 ```
 
 ### 2. Running Inference on a Single Image
