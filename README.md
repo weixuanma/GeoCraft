@@ -30,7 +30,7 @@ conda activate GeoCraft
 
 ## Testing
 
-To test and generate predictions from the trained **CCMIM** model, you can use the `test.py` and `inference.py` scripts. The `test.py` script allows you to evaluate the model on a dataset, while `inference.py` lets you test the model on individual images.
+To test and generate predictions from the trained **GeoCraft** model, you can use the `test.py` and `inference.py` scripts. The `test.py` script allows you to evaluate the model on a dataset, while `inference.py` lets you test the model on individual images.
 
 ### 1. Running Inference on a Test Dataset
 
