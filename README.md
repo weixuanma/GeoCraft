@@ -85,5 +85,5 @@ python train.py \
 
 ## Reuslts
 
-![result](Figure/result.jpg)
+![result](Figure/com.jpg)
 
