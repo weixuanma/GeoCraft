@@ -1,207 +1,309 @@
 import os
 import yaml
-import random
-import numpy as np
 import torch
-import torch.optim as optim
+import argparse
+import torch.nn as nn
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
-from models.ccmim import CCMIM
-from models.backbone.mim_block import MIMBlock
-from models.fusion.ddf_module import DDFModule
-from models.neck.spt_module import SPTModule
-from utils.data_utils import ConcreteDefectDataset
-from utils.metric_utils import calculate_metrics
-from utils.log_utils import Logger
-from utils.vis_utils import plot_loss_curve
+from configs.base_config import hardware, dataset as dataset_config, train as train_config, log_save
+from data.dataset_loader import ObjverseDataset
+from data.data_augmentation import PointCloudAugmenter, ImageAugmenter
+from models.diff2dpoint.diff2dpoint import Diff2DPoint
+from models.point2dmesh.point2dmesh import Point2DMesh
+from models.vision3dgen.vision3dgen import Vision3DGen
+from trainers.base_trainer import BaseTrainer
+from trainers.diff2dpoint_trainer import Diff2DPointTrainer
+from trainers.point2dmesh_trainer import Point2DMeshTrainer
+from trainers.vision3dgen_trainer import Vision3DGenTrainer
+from utils.logger import Logger
+from utils.checkpoint_utils import save_checkpoint, load_checkpoint, save_config
+from utils.visualization_utils import plot_metrics
 
-def set_seed(seed=123):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
+def parse_args():
+    parser = argparse.ArgumentParser(description="GeoCraft 3D Reconstruction Training Script")
+    parser.add_argument("--config_dir", type=str, default="./configs", help="Path to config directory")
+    parser.add_argument("--resume", action="store_true", help="Resume training from last checkpoint")
+    parser.add_argument("--resume_epoch", type=int, default=-1, help="Resume from specific epoch (use -1 for last)")
+    parser.add_argument("--stage", type=str, default="all", choices=["diff2dpoint", "point2dmesh", "vision3dgen", "all"], help="Training stage to run")
+    return parser.parse_args()
 
-def load_config(config_path):
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
-    return config
+def load_stage_configs(config_dir):
+    with open(os.path.join(config_dir, "diff2dpoint_config.yaml"), "r") as f:
+        diff2dpoint_config = yaml.safe_load(f)
+    with open(os.path.join(config_dir, "point2dmesh_config.yaml"), "r") as f:
+        point2dmesh_config = yaml.safe_load(f)
+    with open(os.path.join(config_dir, "vision3dgen_config.yaml"), "r") as f:
+        vision3dgen_config = yaml.safe_load(f)
+    return diff2dpoint_config, point2dmesh_config, vision3dgen_config
 
-def get_optimizer(model, config):
-    optimizer = optim.SGD(
-        model.parameters(),
-        lr=config['train']['lr'],
-        momentum=config['train']['momentum'],
-        weight_decay=config['train']['weight_decay']
-    )
-    lr_scheduler = optim.lr_scheduler.StepLR(
-        optimizer,
-        step_size=config['train']['lr_decay_steps'],
-        gamma=0.1
-    )
-    return optimizer, lr_scheduler
-
-def train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, config):
-    model.train()
-    total_loss = 0.0
-    pbar = tqdm(train_loader, desc=f"Train Epoch [{epoch+1}/{config['train']['epochs']}]")
+def prepare_dataloader():
+    point_aug = PointCloudAugmenter()
+    img_aug = ImageAugmenter()
+    transform = {
+        "point_cloud": point_aug,
+        "image": img_aug
+    }
     
-    for batch in pbar:
-        images, targets = batch
-        images, targets = images.to(device), targets.to(device)
-        
-        outputs = model(images)
-        
-        loss = criterion(outputs, targets)
-        
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        
-        total_loss += loss.item() * images.size(0)
-        pbar.set_postfix({"Batch Loss": loss.item(), "Avg Loss": total_loss / len(train_loader.dataset)})
-    
-    avg_train_loss = total_loss / len(train_loader.dataset)
-    return avg_train_loss
-
-def validate(model, val_loader, criterion, metric_fn, device, config):
-    model.eval()
-    total_val_loss = 0.0
-    all_preds = []
-    all_targets = []
-    
-    with torch.no_grad():
-        for batch in tqdm(val_loader, desc="Validate"):
-            images, targets = batch
-            images, targets = images.to(device), targets.to(device)
-            
-            outputs = model(images)
-            loss = criterion(outputs, targets)
-            
-            total_val_loss += loss.item() * images.size(0)
-            all_preds.extend(torch.softmax(outputs['detections'], dim=-1).cpu().numpy())
-            all_targets.extend(targets.cpu().numpy())
-    
-    avg_val_loss = total_val_loss / len(val_loader.dataset)
-    metrics = metric_fn(
-        all_preds, 
-        all_targets, 
-        iou_thres=config['test']['iou_thres'],
-        conf_thres=config['test']['conf_thres']
-    )
-    return avg_val_loss, metrics
-
-def main(config_path):
-    # Initialize settings
-    config = load_config(config_path)
-    set_seed(config['train']['seed'])
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Create output directories
-    os.makedirs(config['train']['log_dir'], exist_ok=True)
-    os.makedirs(config['train']['ckpt_dir'], exist_ok=True)
-    
-    # Initialize logger
-    logger = Logger(os.path.join(config['train']['log_dir'], "train_log.txt"))
-    logger.write(f"Training Configuration: {config}")
-    
-    # Load datasets
-    train_dataset = ConcreteDefectDataset(
-        data_dir=os.path.join(config['data']['root_dir'], config['data']['dataset'], "train"),
-        image_size=config['data']['image_size'],
-        augment=True
-    )
-    val_dataset = ConcreteDefectDataset(
-        data_dir=os.path.join(config['data']['root_dir'], config['data']['dataset'], "val"),
-        image_size=config['data']['image_size'],
-        augment=False
+    train_dataset = ObjverseDataset(
+        root_path=dataset_config["train"]["root_path"],
+        sample_num=dataset_config["train"]["sample_num"],
+        preprocess=dataset_config["train"]["preprocess"],
+        transform=transform
     )
     
     train_loader = DataLoader(
         train_dataset,
-        batch_size=config['train']['batch_size'],
+        batch_size=hardware["batch_size"],
         shuffle=True,
-        num_workers=config['train']['num_workers'],
+        num_workers=hardware["num_workers"],
         pin_memory=True
     )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=config['train']['batch_size'],
-        shuffle=False,
-        num_workers=config['train']['num_workers'],
-        pin_memory=True
+    return train_loader
+
+def setup_device():
+    device = torch.device(f"cuda:{hardware['gpu_ids'][0]}" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available() and len(hardware["gpu_ids"]) > 1:
+        print(f"Using multiple GPUs: {hardware['gpu_ids']}")
+    else:
+        print(f"Using device: {device}")
+    return device
+
+def init_logger_and_configs(log_dir, config_dir):
+    os.makedirs(log_dir, exist_ok=True)
+    logger = Logger(log_dir)
+    
+    save_config(hardware, log_dir, "hardware_config")
+    save_config(dataset_config, log_dir, "dataset_config")
+    save_config(train_config, log_dir, "train_config")
+    
+    diff2dpoint_config, point2dmesh_config, vision3dgen_config = load_stage_configs(config_dir)
+    save_config(diff2dpoint_config, log_dir, "diff2dpoint_config")
+    save_config(point2dmesh_config, log_dir, "point2dmesh_config")
+    save_config(vision3dgen_config, log_dir, "vision3dgen_config")
+    
+    return logger, diff2dpoint_config, point2dmesh_config, vision3dgen_config
+
+def train_diff2dpoint(train_loader, device, config, logger, checkpoint_dir, resume=False, resume_epoch=-1):
+    model = Diff2DPoint(config).to(device)
+    if len(hardware["gpu_ids"]) > 1 and torch.cuda.is_available():
+        model = nn.DataParallel(model, device_ids=hardware["gpu_ids"])
+    
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=train_config["optimizer"]["lr"],
+        weight_decay=train_config["optimizer"]["weight_decay"],
+        betas=train_config["optimizer"]["betas"]
     )
     
-    # Initialize model, criterion, optimizer
-    model = CCMIM(
-        mim_hidden_dim=config['model']['mim']['hidden_dim'],
-        ddf_channel=config['model']['ddf']['channel'],
-        spt_token_level=config['model']['spt']['token_level'],
-        num_classes=config['model']['num_classes']
-    ).to(device)
-    
-    criterion = torch.nn.CombinedLoss(  # Custom combined loss for classification and localization
-        cls_loss=torch.nn.CrossEntropyLoss(),
-        reg_loss=torch.nn.IoULoss()
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=config["train"]["epochs"],
+        eta_min=1e-6
     )
     
-    optimizer, lr_scheduler = get_optimizer(model, config)
+    start_epoch = 0
+    if resume:
+        model, optimizer, start_epoch, _ = load_checkpoint(
+            model, optimizer, os.path.join(checkpoint_dir, f"diff2dpoint_checkpoint_epoch_{resume_epoch:03d}.pth")
+            if resume_epoch != -1 else checkpoint_dir
+        )
+        logger.info(f"Resumed Diff2DPoint training from epoch {start_epoch}")
     
-    # Training loop
-    best_val_map = 0.0
-    train_losses = []
-    val_losses = []
-    val_maps = []
-    
-    for epoch in range(config['train']['epochs']):
-        # Train
-        avg_train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, config)
-        train_losses.append(avg_train_loss)
-        
-        # Validate
-        avg_val_loss, val_metrics = validate(model, val_loader, criterion, calculate_metrics, device, config)
-        val_losses.append(avg_val_loss)
-        val_maps.append(val_metrics['mAP50'])
-        
-        # Update scheduler
-        lr_scheduler.step()
-        
-        # Log results
-        log_msg = (f"Epoch [{epoch+1}/{config['train']['epochs']}] | "
-                   f"Train Loss: {avg_train_loss:.4f} | "
-                   f"Val Loss: {avg_val_loss:.4f} | "
-                   f"Precision: {val_metrics['precision']:.4f} | "
-                   f"Recall: {val_metrics['recall']:.4f} | "
-                   f"F1-Score: {val_metrics['f1']:.4f} | "
-                   f"mAP50: {val_metrics['mAP50']:.4f}")
-        logger.write(log_msg)
-        print(log_msg)
-        
-        # Save best model
-        if val_metrics['mAP50'] > best_val_map:
-            best_val_map = val_metrics['mAP50']
-            torch.save(model.state_dict(), os.path.join(config['train']['ckpt_dir'], "best_ccmim_model.pth"))
-            logger.write(f"Best model saved (mAP50: {best_val_map:.4f})")
-    
-    # Save training results
-    np.save(os.path.join(config['train']['log_dir'], "train_losses.npy"), np.array(train_losses))
-    np.save(os.path.join(config['train']['log_dir'], "val_losses.npy"), np.array(val_losses))
-    np.save(os.path.join(config['train']['log_dir'], "val_maps.npy"), np.array(val_maps))
-    
-    # Plot loss curve
-    plot_loss_curve(
-        train_losses=train_losses,
-        val_losses=val_losses,
-        save_path=os.path.join(config['train']['log_dir'], "loss_curve.png")
+    criterion = nn.MSELoss() if config["loss"]["type"] == "L2Loss" else nn.L1Loss()
+    trainer = Diff2DPointTrainer(
+        model=model,
+        optimizer=optimizer,
+        criterion=criterion,
+        device=device,
+        logger=logger,
+        checkpoint_dir=checkpoint_dir,
+        save_freq=log_save["save_freq"],
+        eval_freq=log_save["eval_freq"]
     )
     
-    logger.write(f"Training completed. Best val mAP50: {best_val_map:.4f}")
+    metrics_history = trainer.train(
+        train_loader=train_loader,
+        epochs=config["train"]["epochs"],
+        start_epoch=start_epoch,
+        lr_scheduler=lr_scheduler
+    )
+    
+    plot_metrics(metrics_history, log_save["log_dir"], title="Diff2DPoint Training Metrics")
+    save_checkpoint(model, optimizer, config["train"]["epochs"], metrics_history["train_loss"][-1], checkpoint_dir, "diff2dpoint_final")
+    logger.info("Diff2DPoint training completed")
+    return model, metrics_history
+
+def train_point2dmesh(train_loader, device, config, logger, checkpoint_dir, diff2dpoint_model, resume=False, resume_epoch=-1):
+    model = Point2DMesh(config).to(device)
+    if len(hardware["gpu_ids"]) > 1 and torch.cuda.is_available():
+        model = nn.DataParallel(model, device_ids=hardware["gpu_ids"])
+    
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=train_config["optimizer"]["lr"],
+        weight_decay=train_config["optimizer"]["weight_decay"],
+        betas=train_config["optimizer"]["betas"]
+    )
+    
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=config["train"]["epochs"],
+        eta_min=1e-6
+    )
+    
+    start_epoch = 0
+    if resume:
+        model, optimizer, start_epoch, _ = load_checkpoint(
+            model, optimizer, os.path.join(checkpoint_dir, f"point2dmesh_checkpoint_epoch_{resume_epoch:03d}.pth")
+            if resume_epoch != -1 else checkpoint_dir
+        )
+        logger.info(f"Resumed Point2DMesh training from epoch {start_epoch}")
+    
+    trainer = Point2DMeshTrainer(
+        model=model,
+        optimizer=optimizer,
+        device=device,
+        logger=logger,
+        checkpoint_dir=checkpoint_dir,
+        save_freq=log_save["save_freq"],
+        eval_freq=log_save["eval_freq"],
+        dpo_temperature=config["dpo"]["temperature"]
+    )
+    
+    metrics_history = trainer.train(
+        train_loader=train_loader,
+        epochs=config["train"]["epochs"],
+        start_epoch=start_epoch,
+        lr_scheduler=lr_scheduler,
+        diff2dpoint_model=diff2dpoint_model
+    )
+    
+    plot_metrics(metrics_history, log_save["log_dir"], title="Point2DMesh Training Metrics")
+    save_checkpoint(model, optimizer, config["train"]["epochs"], metrics_history["train_loss"][-1], checkpoint_dir, "point2dmesh_final")
+    logger.info("Point2DMesh training completed")
+    return model, metrics_history
+
+def train_vision3dgen(train_loader, device, config, logger, checkpoint_dir, diff2dpoint_model, point2dmesh_model, resume=False, resume_epoch=-1):
+    model = Vision3DGen(config).to(device)
+    if len(hardware["gpu_ids"]) > 1 and torch.cuda.is_available():
+        model = nn.DataParallel(model, device_ids=hardware["gpu_ids"])
+    
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=train_config["optimizer"]["lr"],
+        weight_decay=train_config["optimizer"]["weight_decay"],
+        betas=train_config["optimizer"]["betas"]
+    )
+    
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=config["train"]["epochs"],
+        eta_min=1e-6
+    )
+    
+    start_epoch = 0
+    if resume:
+        model, optimizer, start_epoch, _ = load_checkpoint(
+            model, optimizer, os.path.join(checkpoint_dir, f"vision3dgen_checkpoint_epoch_{resume_epoch:03d}.pth")
+            if resume_epoch != -1 else checkpoint_dir
+        )
+        logger.info(f"Resumed Vision3DGen training from epoch {start_epoch}")
+    
+    criterion = nn.MSELoss()
+    trainer = Vision3DGenTrainer(
+        model=model,
+        optimizer=optimizer,
+        criterion=criterion,
+        device=device,
+        logger=logger,
+        checkpoint_dir=checkpoint_dir,
+        save_freq=log_save["save_freq"],
+        eval_freq=log_save["eval_freq"]
+    )
+    
+    metrics_history = trainer.train(
+        train_loader=train_loader,
+        epochs=config["train"]["epochs"],
+        start_epoch=start_epoch,
+        lr_scheduler=lr_scheduler,
+        diff2dpoint_model=diff2dpoint_model,
+        point2dmesh_model=point2dmesh_model
+    )
+    
+    plot_metrics(metrics_history, log_save["log_dir"], title="Vision3DGen Training Metrics")
+    save_checkpoint(model, optimizer, config["train"]["epochs"], metrics_history["train_loss"][-1], checkpoint_dir, "vision3dgen_final")
+    logger.info("Vision3DGen training completed")
+    return model, metrics_history
+
+def main():
+    args = parse_args()
+    
+    device = setup_device()
+    logger, diff2dpoint_cfg, point2dmesh_cfg, vision3dgen_cfg = init_logger_and_configs(log_save["log_dir"], args.config_dir)
+    train_loader = prepare_dataloader()
+    
+    checkpoint_dir = os.path.join(log_save["checkpoint_dir"], "geocraft_train")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    diff2dpoint_model = None
+    point2dmesh_model = None
+    
+    if args.stage in ["diff2dpoint", "all"]:
+        logger.info("="*50)
+        logger.info("Starting Diff2DPoint Stage Training")
+        logger.info("="*50)
+        diff2dpoint_model, _ = train_diff2dpoint(
+            train_loader=train_loader,
+            device=device,
+            config=diff2dpoint_cfg,
+            logger=logger,
+            checkpoint_dir=checkpoint_dir,
+            resume=args.resume,
+            resume_epoch=args.resume_epoch
+        )
+    
+    if args.stage in ["point2dmesh", "all"]:
+        if diff2dpoint_model is None and not args.resume:
+            logger.error("Diff2DPoint model not found. Train Diff2DPoint first or enable resume.")
+            return
+        
+        logger.info("="*50)
+        logger.info("Starting Point2DMesh Stage Training")
+        logger.info("="*50)
+        point2dmesh_model, _ = train_point2dmesh(
+            train_loader=train_loader,
+            device=device,
+            config=point2dmesh_cfg,
+            logger=logger,
+            checkpoint_dir=checkpoint_dir,
+            diff2dpoint_model=diff2dpoint_model,
+            resume=args.resume,
+            resume_epoch=args.resume_epoch
+        )
+    
+    if args.stage in ["vision3dgen", "all"]:
+        if diff2dpoint_model is None or point2dmesh_model is None and not args.resume:
+            logger.error("Diff2DPoint/Point2DMesh models not found. Train them first or enable resume.")
+            return
+        
+        logger.info("="*50)
+        logger.info("Starting Vision3DGen Stage Training")
+        logger.info("="*50)
+        _, _ = train_vision3dgen(
+            train_loader=train_loader,
+            device=device,
+            config=vision3dgen_cfg,
+            logger=logger,
+            checkpoint_dir=checkpoint_dir,
+            diff2dpoint_model=diff2dpoint_model,
+            point2dmesh_model=point2dmesh_model,
+            resume=args.resume,
+            resume_epoch=args.resume_epoch
+        )
+    
+    logger.info("="*50)
+    logger.info("All Selected Training Stages Completed Successfully")
+    logger.info("="*50)
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Train CCMIM Model for Concrete Defect Detection")
-    parser.add_argument("--config", type=str, default="configs/train_config.yaml", help="Path to training config file")
-    args = parser.parse_args()
-    main(args.config)
+    main()

@@ -1,0 +1,42 @@
+dataset_prep:
+  ssim_threshold: 0.85
+  geometric_verification:
+    enable: True
+    euler_char_threshold: 2
+    normal_consistency: 0.9
+    patch_variance: 0.1
+
+transformer:
+  num_layers: 6
+  hidden_dim: 512
+  num_heads: 8
+  dropout: 0.1
+  point_encoder: "PointNet++"
+  point_feat_dim: 256
+  mesh_token_vocab_size: 128
+  seq_len: 512
+
+dpo:
+  enable: True
+  temperature: 0.1
+  preference_data_path: "./data/preference_pairs"
+  fine_tune_epochs: 5
+  loss_reduction: "mean"
+
+mesh_generation:
+  sampling_strategy: "nucleus"
+  nucleus_p: 0.95
+  vertex_offset_range: [-0.1, 0.1]
+  face_connectivity_type: "triangle"
+
+train:
+  epochs: 10
+  log_interval: 50
+  val_interval: 1
+  init_checkpoint: "./checkpoints/diff2dpoint_final.pth"
+
+inference:
+  save_mesh: True
+  mesh_format: "obj"
+  post_process: True
+  smooth_iterations: 5

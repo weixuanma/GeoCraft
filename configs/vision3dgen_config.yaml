@@ -1,0 +1,45 @@
+triplane:
+  resolution: 256
+  num_channels: 128
+  bounding_box_length: 2.0
+  projection_mode: "bilinear"
+
+point_cloud_encoding:
+  sampling_method: "density_weighted"
+  num_center_points: 1024
+  k_neighbors: 32
+  sigma: 0.1
+  ball_query_radius: 0.05
+  pointnet_hidden_dims: [64, 128]
+  transformer_encoder_layers: 2
+  pos_emb_type: "sinusoidal"
+
+feature_alignment:
+  image_encoder: "ViT-L/16"
+  image_feat_dim: 768
+  mesh_voxel_resolution: 128
+  iso_surface_radius: 0.02
+  sparse_resnet_blocks: 4
+  alignment_loss:
+    image: "KLLoss"
+    mesh: "L2Loss"
+    weight: [0.5, 0.5]
+
+sdf:
+  mlp_layers: 8
+  mlp_hidden_dims: [256, 512, 512, 1024, 1024, 512, 512, 256]
+  output_dim: 1
+  activation: "ReLU"
+  marching_cubes_resolution: 256
+
+train:
+  epochs: 20
+  log_interval: 80
+  val_interval: 1
+  init_checkpoint: "./checkpoints/point2dmesh_final.pth"
+
+inference:
+  save_3d_surface: True
+  surface_format: "ply"
+  visualize_surface: True
+  sdf_query_density: 1000000

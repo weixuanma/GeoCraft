@@ -1,0 +1,32 @@
+point_cloud:
+  num_points: 2048
+  dim: 3
+  gaussian_init: True
+
+diffusion:
+  num_timesteps: 1000
+  alpha_init: 1.0
+  alpha_final: 1e-4
+  noise_type: "gaussian"
+
+feature_projection:
+  cnn_backbone: "ResNet50"
+  num_cnn_layers: 5
+  feature_dim: 256
+  projection_matrix_dim: 256
+  lambda_decay: 0.8
+  bilinear_sampling: True
+
+loss:
+  type: "L2Loss"
+  reduction: "mean"
+
+train:
+  epochs: 15
+  log_interval: 100
+  val_interval: 1
+
+inference:
+  denoise_steps: 1000
+  sample_strategy: "deterministic"
+  save_point_cloud: True

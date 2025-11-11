@@ -1,0 +1,40 @@
+hardware:
+  gpu_ids: [0, 1, 2]
+  batch_size: 32
+  num_workers: 8
+  gradient_clip_norm: 1.0
+
+dataset:
+  train:
+    root_path: "./data/objverse_subset"
+    sample_num: 110000
+    format: "obj"
+    preprocess: True
+  
+  test_gso:
+    root_path: "./data/gso"
+    sample_num: 1000
+    metric_eval: ["CMMD", "FID_CLIP", "CLIP-score", "LPIPS"]
+  
+  test_pix3d:
+    root_path: "./data/pix3d"
+    sample_num: 3000
+    metric_eval: ["CMMD", "FID_CLIP", "CLIP-score", "LPIPS"]
+
+train:
+  total_epochs: 45
+  optimizer:
+    type: "AdamW"
+    lr: 1e-4
+    weight_decay: 1e-5
+    betas: [0.9, 0.999]
+  lr_scheduler:
+    type: "CosineAnnealingLR"
+    T_max: 45
+
+log_save:
+  log_dir: "./logs/geocraft"
+  checkpoint_dir: "./checkpoints"
+  save_freq: 5
+  eval_freq: 1
+  visualize: True
