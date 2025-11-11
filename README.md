@@ -59,31 +59,25 @@ python test.py \
 To run inference on a single image and generate the visualized detection result, use the following command:
 ```bash
 python inference.py \
-  --ckpt ../Training/runs/best_ccmim_model.pth \
-  --image_path ../Testing/test_datasets/sample_concrete_crack.jpg \
-  --outdir ../Testing/inference_results \
-  --size 640 \
-  --conf_thres 0.5
+  --input_img ../Testing/test_datasets/sample_single_image.jpg \
+  --config_dir ./configs \
+  --checkpoint_dir ./checkpoints/geocraft_train \
+  --output_dir ../Testing/inference_results \
+  --num_points 2048 \
+  --mesh_post_process \
+  --surface_resolution 256 \
+  --camera_intrinsics 500 500 256 256 \
+  --camera_pose 1 0 0 0 0 1 0 0 0 0 1 2
 ```
 
-## Training CCMIM
-To train a new CCMIM model on a dataset, you can use the train.py script. Below is an example of how to run the training process.
+## Training GeoCraft
+To train a new GeoCraft model on a dataset, you can use the train.py script. Below is an example of how to run the training process.
 ```bash
 python train.py \
-  --model ccmim \
-  --train_data_dir ../Training/datasets/RDD2022/train \
-  --val_data_dir ../Training/datasets/RDD2022/val \
-  --outdir ../Training/runs/ccmim_rdd2022_train \
-  --ckpt_init None \
-  --batch_size 32 \
-  --size 640 \
-  --epochs 150 \
-  --lr 0.01 \
-  --lr_decay_steps 50 \
-  --optimizer sgd \
-  --weight_decay 0.0005 \
-  --momentum 0.937 \
-  --seed 123
+--config_dir ./configs \
+--stage all \
+--resume False \
+--resume_epoch -1
 ```
 
 
