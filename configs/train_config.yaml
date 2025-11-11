@@ -1,0 +1,31 @@
+# Training parameter configuration (matches Table 2 in the paper)
+train:
+  seed: 123  # Random seed for reproducibility
+  epochs: 150  # Total training epochs
+  batch_size: 32  # Batch size (compatible with RTX 3090 GPU)
+  num_workers: 8  # Number of data loading workers
+  lr: 0.01  # Initial learning rate
+  lr_decay_steps: 50  # Step interval for learning rate decay (reduce every 50 epochs)
+  lr_decay_gamma: 0.1  # Decay factor for learning rate
+  momentum: 0.937  # Momentum for SGD optimizer
+  weight_decay: 0.0005  # Weight decay to prevent overfitting
+  loss:
+    cls_loss: "cross_entropy"  # Classification loss type
+    reg_loss: "iou"  # Regression loss type (IoU loss for bounding box)
+    loss_weight: [1.0, 5.0]  # Weight ratio of classification loss to regression loss
+
+data:
+  root_dir: "./data"  # Root directory of datasets (RDD2022/SDNET2018/CCCD)
+  dataset: "RDD2022"  # Default training dataset (options: RDD2022/SDNET2018/CCCD)
+  image_size: 640  # Input image size (640×640, consistent with paper settings)
+  augment: True  # Enable data augmentation for training
+  augment_ops:
+    random_flip: True  # Random horizontal/vertical flip
+    color_jitter: True  # Brightness/contrast adjustment
+    random_rotate: False  # Disable rotation (avoids crack shape distortion)
+
+output:
+  log_dir: "./runs/train_logs"  # Directory to save training logs
+  ckpt_dir: "./runs/checkpoints"  # Directory to save model checkpoints
+  save_freq: 10  # Save checkpoint every 10 epochs (in addition to best model)
+  best_metric: "mAP50"  # Metric for selecting best model (mAP50 as in paper)

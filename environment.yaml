@@ -1,0 +1,22 @@
+name: ccmim_concrete_defectchannels:
+pytorch
+nvidia
+conda-forge
+defaults
+dependencies:
+python=3.8 # Compatible with PyTorch 1.10.0 and downstream libraries
+pytorch=1.10.0 # Matches experimental framework in the paper
+torchvision=0.11.1 # Corresponding version to PyTorch 1.10.0
+cudatoolkit=11.3 # GPU support (compatible with NVIDIA RTX 3090)
+numpy=1.21.0 # For array operations in data processing and model inference
+pandas=1.3.5 # For organizing and saving quantitative results (e.g., test metrics)
+scikit-learn=0.24.2 # For calculating precision, recall, F1-score
+opencv-python=4.5.3.56 # For image visualization (detection bounding box drawing)
+pillow=8.4.0 # For image loading and preprocessing
+matplotlib=3.4.3 # For plotting loss curves and result figures
+tqdm=4.62.3 # For training/testing progress bar visualization
+pyyaml=6.0 # For parsing model/train/test configuration files
+pip:
+mamba-ssm==1.1.1 # Core dependency for Mamba module in MiM block
+pycocotools==2.0.6 # For calculating mAP50 metric (matches paper's evaluation standard)
+torchmetrics==0.6.0 # Supplementary metric calculation (optional)

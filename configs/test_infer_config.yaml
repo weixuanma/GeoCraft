@@ -1,0 +1,38 @@
+# Unified configuration for testing and inference
+common:
+  device: "cuda"  # Running device (options: cuda/cpu)
+  seed: 123  # Random seed for result reproducibility
+  image_size: 640  # Input image size (consistent with training)
+  num_classes: 1  # Same as training (crack detection)
+  class_names: ["crack"]  # Class name for visualization
+
+# Testing configuration
+test:
+  ckpt_path: "./runs/checkpoints/best_ccmim_model.pth"  # Path to trained model checkpoint
+  batch_size: 16  # Batch size for testing
+  num_workers: 4  # Number of data loading workers for testing
+  dataset: "RDD2022"  # Target test dataset (options: RDD2022/SDNET2018/CCCD)
+  data_dir: "./data"  # Root directory of test dataset
+  metric:
+    iou_thres: 0.5  # IoU threshold for mAP50 calculation (matches paper)
+    conf_thres: 0.5  # Confidence threshold for filtering low-confidence predictions
+  output:
+    result_dir: "./results/test_results"  # Directory to save quantitative results (CSV/txt)
+    vis_dir: "./results/test_visualizations"  # Directory to save detection visualizations
+    save_metrics: True  # Save precision/recall/mAP50 to file
+    save_vis: True  # Save visualized detection results
+
+# Inference configuration
+inference:
+  ckpt_path: "./runs/checkpoints/best_ccmim_model.pth"  # Path to trained model checkpoint
+  input_type: "single"  # Input type (options: single/batch)
+  input_path: "./data/sample_crack.jpg"  # Path to single input image (for input_type=single)
+  input_dir: "./data/batch_images"  # Directory of input images (for input_type=batch)
+  conf_thres: 0.5  # Confidence threshold for retaining crack detections
+  iou_thres: 0.3  # IoU threshold for non-maximum suppression (NMS)
+  output:
+    output_dir: "./results/inference_results"  # Directory to save inference visualizations
+    save_txt: False  # Disable saving detection results to TXT (visualization as main output)
+    draw_box: True  # Draw bounding boxes on output images
+    box_color: [0, 255, 0]  # Bounding box color (RGB: green)
+    text_color: [255, 0, 0]  # Class/confidence text color (RGB: red)
