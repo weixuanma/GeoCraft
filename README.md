@@ -7,7 +7,7 @@ To address these issues, this paper proposes GeoCraft, a multimodal 3D reconstru
 Experiments on the Google Scanned Objects (GSO) and Pix3D datasets show that GeoCraft excels in key metrics. On the GSO dataset, its CMMD is 2.810 and FID\textsubscript{CLIP} is 26.420; on Pix3D, CMMD is 3.020 and FID\textsubscript{CLIP} is 27.030. GeoCraft significantly outperforms existing 3D reconstruction methods and also demonstrates advantages in computational efficiency, effectively solving key challenges in 3D reconstruction.
 
 
-![](Figure/CC1.jpg)
+![](Figure/CC11.jpg)
 
 
 
