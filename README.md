@@ -7,7 +7,7 @@ To address these issues, this paper proposes GeoCraft, a multimodal 3D reconstru
 Experiments on the Google Scanned Objects (GSO) and Pix3D datasets show that GeoCraft excels in key metrics. On the GSO dataset, its CMMD is 2.810 and FID\textsubscript{CLIP} is 26.420; on Pix3D, CMMD is 3.020 and FID\textsubscript{CLIP} is 27.030. GeoCraft significantly outperforms existing 3D reconstruction methods and also demonstrates advantages in computational efficiency, effectively solving key challenges in 3D reconstruction.
 
 
-![](Figure/CC1.jpg)
+![](Figure/CC11.jpg)
 
 
 
@@ -18,22 +18,12 @@ To set up the environment for this project, follow the steps below:
 
 The first step is to create a Conda environment specifically for this project. This helps to ensure that the project dependencies are isolated and do not interfere with other Python projects or system-wide libraries.
 
-You can create a Conda environment named `CCMIM` by running the following command in your terminal or command prompt:
+You can create a Conda environment named `GeoCraft` by running the following command in your terminal or command prompt:
 
 ```bash
 conda env create -f environment.yaml
-conda activate CCMIM
+conda activate GeoCraft
 ```
-## Data Availability
-
-The data used in this study are from publicly available datasets. The datasets used are as follows:
-
-1. **RDD2022 Dataset**: Accessible via the open-source repository at [https://github.com/sekilab/RoadDamageDetector](https://github.com/sekilab/RoadDamageDetector), which provides complete image files and corresponding annotation data for road defect detection tasks.
-
-2. **SDNET2018 Dataset**: Available for download from the Utah State University Digital Commons at [https://digitalcommons.usu.edu/all_datasets/48/](https://digitalcommons.usu.edu/all_datasets/48/), including all 56,000 concrete bridge deck images and detailed metadata (e.g., imaging conditions, crack labels).
-
-3. **CCCD Dataset**: Hosted on the Virginia Tech University Libraries Data Repository, accessible at [https://data.lib.vt.edu/articles/dataset/Concrete_Crack_Conglomerate_Dataset/16625056](https://data.lib.vt.edu/articles/dataset/Concrete_Crack_Conglomerate_Dataset/16625056), with full access to the ~3,500 building concrete crack images and standard annotation files compatible with common deep learning frameworks.
-
 
 
 
